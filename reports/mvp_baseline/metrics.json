@@ -1,0 +1,8 @@
+{
+  "weighted_f1":0.6851294313,
+  "heldout_well":"15\/9-13",
+  "target_col":"FORCE_2020_LITHOFACIES_LITHOLOGY",
+  "well_col":"WELL",
+  "depth_col":"DEPTH_MD",
+  "curve_cols":"GR,RHOB,NPHI,DTC,RDEP,RMED,CALI,PEF,SP"
+}
