@@ -1,8 +1,22 @@
 # LithoLens
 
-LithoLens is an uncertainty-aware well-log interpretation assistant for the Halliburton Landmark DS365.ai Hackathon 2026. It predicts lithology/facies from well-log data and keeps the geoscientist in control by showing confidence, uncertainty, QC warnings, measured-vs-imputed status, and plain-language prediction explanations.
+**Uncertainty-aware well-log lithology prediction for the Halliburton Landmark DS365.ai Hackathon 2026.**
 
-The first scaffold targets public FORCE 2020-style CSV data, generic well-log CSVs, and notebook-friendly Python workflows. LAS loading is planned after the CSV baseline is stable.
+LithoLens is a trust-first interpretation workflow. The project starts with a FORCE-style CSV baseline that predicts lithology from common well logs using well-level validation, then grows into QC, uncertainty, explanation, and dashboard layers once the baseline is stable.
+
+The current priority is deliberately narrow: prove that the repo can load real FORCE data, infer the required schema, train a RandomForest by well, report weighted F1 and a confusion matrix, and save predictions for one held-out well.
+
+## What Works Now
+
+- FORCE-style semicolon or comma CSV loading
+- target, well, and depth column inference
+- common log curve selection from available columns
+- missing-value indicators
+- well-safe `GroupKFold` validation
+- RandomForest MVP baseline
+- weighted F1 and confusion matrix export
+- one held-out well prediction CSV
+- official FORCE labels and penalty-matrix location confirmed from the cloned reference
 
 ## Setup
 
@@ -15,13 +29,19 @@ pip install -e .
 
 ## Data
 
-Place the FORCE 2020 training CSV or a compatible well-log CSV under `data/raw/`. The default config expects:
+The repo keeps raw data out of Git. To prepare the FORCE training file from the cloned official reference:
+
+```powershell
+python scripts/prepare_force_data.py
+```
+
+That extracts:
 
 ```text
 data/raw/force_train.csv
 ```
 
-Required columns are flexible because LithoLens normalizes common mnemonics such as `DEPTH`, `DEPT`, `DEPTH_MD`, `WELL`, `GR`, `RHOB`, `NPHI`, `DTC`, `RDEP`, `RMED`, `CALI`, `PEF`, `SP`, `LITHOLOGY`, and `FORCE_2020_LITHOFACIES_LITHOLOGY`.
+You can also place a compatible CSV there manually. Required columns are flexible because LithoLens normalizes common mnemonics such as `DEPTH`, `DEPT`, `DEPTH_MD`, `WELL`, `GR`, `RHOB`, `NPHI`, `DTC`, `RDEP`, `RMED`, `CALI`, `PEF`, `SP`, `LITHOLOGY`, and `FORCE_2020_LITHOFACIES_LITHOLOGY`.
 
 ## Run Baseline
 
@@ -32,9 +52,17 @@ python scripts/run_baseline.py --config configs/baseline.yaml
 Outputs are written to:
 
 ```text
-reports/models/
-reports/metrics/
-reports/predictions/
+reports/mvp_baseline/random_forest_mvp.joblib
+reports/mvp_baseline/metrics.json
+reports/mvp_baseline/confusion_matrix.csv
+reports/mvp_baseline/heldout_well_<name>_predictions.csv
+```
+
+Recent local FORCE smoke result with 50 trees:
+
+```text
+Held-out well: 15/9-13
+Weighted F1: 0.6851
 ```
 
 ## Make Demo Outputs
@@ -45,13 +73,9 @@ python scripts/make_demo_outputs.py --config configs/baseline.yaml
 
 This trains on a synthetic mini dataset if no FORCE CSV is available, then creates a demo prediction CSV.
 
-## Launch Dashboard
+## Dashboard
 
-```powershell
-streamlit run app/streamlit_app.py
-```
-
-Upload a prediction CSV or select the latest file from `reports/predictions/`.
+The Streamlit shell exists, but dashboard polish is intentionally paused until the MVP baseline is locked.
 
 ## Tests
 
@@ -76,10 +100,10 @@ reports/        Generated models, metrics, predictions
 
 ## Current Limitations
 
-- CSV ingestion is implemented first; LAS parsing is not yet wired.
-- FORCE penalty scoring is a placeholder until the exact matrix is copied from the reference material.
+- CSV ingestion is implemented first; LAS parsing is not wired yet.
+- FORCE penalty scoring is not active yet, though the official `12 x 12` matrix has been located.
 - SHAP explanations are optional and only used if the package is installed.
-- The baseline model is intentionally simple so QC, uncertainty, and dashboard plumbing can be tested early.
+- The baseline model is intentionally simple so the team can trust the data split and artifact flow before adding complexity.
 
 ## Roadmap
 

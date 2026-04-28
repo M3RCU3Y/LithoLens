@@ -1,4 +1,4 @@
-.PHONY: install test baseline demo app clone-references
+.PHONY: install test prepare-force baseline demo app clone-references
 
 install:
 	pip install -r requirements.txt
@@ -6,6 +6,9 @@ install:
 
 test:
 	pytest
+
+prepare-force:
+	python scripts/prepare_force_data.py
 
 baseline:
 	python scripts/run_baseline.py --config configs/baseline.yaml

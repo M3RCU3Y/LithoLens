@@ -9,7 +9,7 @@ from litholens.constants import MNEMONIC_ALIASES
 
 def load_force_csv(path: str | Path) -> pd.DataFrame:
     """Load FORCE-style CSV data and standardize known column names."""
-    return standardize_mnemonics(normalize_column_names(pd.read_csv(Path(path))))
+    return standardize_mnemonics(normalize_column_names(pd.read_csv(Path(path), sep=None, engine="python")))
 
 
 def load_generic_csv(path: str | Path) -> pd.DataFrame:

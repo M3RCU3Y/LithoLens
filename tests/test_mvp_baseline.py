@@ -1,0 +1,39 @@
+from pathlib import Path
+
+import pandas as pd
+
+from litholens.mvp_baseline import run_mvp_baseline
+
+
+def test_mvp_baseline_infers_columns_and_saves_one_heldout_well(tmp_path: Path):
+    rows = []
+    for well_idx, well in enumerate(["A", "B", "C"]):
+        for i in range(12):
+            lithology = 30000 if i < 6 else 65000
+            rows.append(
+                {
+                    "Well": well,
+                    "DEPT": 1000 + i,
+                    "GR": 40 + i + well_idx,
+                    "RHOB": 2.2 + well_idx * 0.02,
+                    "NPHI": None if i == 3 else 0.15 + i * 0.001,
+                    "FORCE_2020_LITHOFACIES_LITHOLOGY": lithology,
+                }
+            )
+    input_path = tmp_path / "force_style.csv"
+    output_dir = tmp_path / "reports"
+    pd.DataFrame(rows).to_csv(input_path, index=False)
+
+    result = run_mvp_baseline(input_path=input_path, output_dir=output_dir, n_splits=3)
+
+    assert result.target_col == "FORCE_2020_LITHOFACIES_LITHOLOGY"
+    assert result.well_col == "WELL"
+    assert result.depth_col == "DEPTH_MD"
+    assert result.curve_cols == ["GR", "RHOB", "NPHI"]
+    assert 0 <= result.weighted_f1 <= 1
+    assert result.predictions_path.exists()
+    predictions = pd.read_csv(result.predictions_path)
+    assert predictions["WELL"].nunique() == 1
+    assert {"prediction", "actual", "GR_was_missing", "NPHI_was_missing"}.issubset(
+        predictions.columns
+    )

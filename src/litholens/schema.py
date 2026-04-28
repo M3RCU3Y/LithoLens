@@ -4,7 +4,12 @@ from collections.abc import Iterable
 
 import pandas as pd
 
-from litholens.constants import COMMON_LOG_COLUMNS, TARGET_COLUMN_CANDIDATES, WELL_COLUMN_CANDIDATES
+from litholens.constants import (
+    COMMON_LOG_COLUMNS,
+    DEPTH_COLUMN_CANDIDATES,
+    TARGET_COLUMN_CANDIDATES,
+    WELL_COLUMN_CANDIDATES,
+)
 
 
 def first_existing_column(df: pd.DataFrame, candidates: Iterable[str]) -> str | None:
@@ -16,6 +21,11 @@ def first_existing_column(df: pd.DataFrame, candidates: Iterable[str]) -> str | 
 def infer_target_col(df: pd.DataFrame) -> str | None:
     """Infer a lithology target column if one exists."""
     return first_existing_column(df, TARGET_COLUMN_CANDIDATES)
+
+
+def infer_depth_col(df: pd.DataFrame) -> str | None:
+    """Infer the depth column if one exists."""
+    return first_existing_column(df, DEPTH_COLUMN_CANDIDATES)
 
 
 def infer_group_col(df: pd.DataFrame) -> str | None:
