@@ -1,0 +1,38 @@
+data:
+  raw_path: data/raw/force_train.csv
+  prediction_input_path: data/raw/force_train.csv
+  depth_col: DEPTH_MD
+  group_col: WELL
+  target_col: FORCE_2020_LITHOFACIES_LITHOLOGY
+  curve_cols: [GR, RHOB, NPHI, DTC, RDEP, RMED, CALI, PEF, SP]
+
+qc:
+  spike_z_threshold: 6.0
+  max_gap: 5
+
+features:
+  rolling_windows: [5, 15, 31]
+  include_gradients: true
+  include_ratios: true
+
+split:
+  test_size: 0.2
+  random_state: 42
+  n_splits: 5
+
+model:
+  type: random_forest
+  random_state: 42
+  n_estimators: 300
+  max_depth:
+  class_weight: balanced_subsample
+
+uncertainty:
+  confidence_threshold: 0.60
+  margin_threshold: 0.15
+  entropy_threshold: 1.25
+
+outputs:
+  model_dir: reports/models
+  metrics_dir: reports/metrics
+  prediction_dir: reports/predictions
