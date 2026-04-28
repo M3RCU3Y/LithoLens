@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "litholens"
+version = "0.1.0"
+description = "Uncertainty-aware well log lithology prediction workflow."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "joblib>=1.3",
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "plotly>=5.18",
+  "pyyaml>=6.0",
+  "scikit-learn>=1.3",
+  "streamlit>=1.31",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff>=0.4"]
+explain = ["shap>=0.44"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
