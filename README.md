@@ -13,9 +13,12 @@ The current priority is deliberately narrow: prove that the repo can load real F
 - common log curve selection from available columns
 - missing-value indicators
 - well-safe `GroupKFold` validation
+- full per-fold metrics and out-of-fold predictions
+- official FORCE penalty score support
 - RandomForest MVP baseline
 - weighted F1 and confusion matrix export
-- one held-out well prediction CSV
+- confidence, margin, entropy, uncertainty flags, QC warnings, review zones, and plain-language explanations
+- one held-out well prediction CSV for the demo
 - official FORCE labels and penalty-matrix location confirmed from the cloned reference
 
 ## Setup
@@ -75,7 +78,11 @@ This trains on a synthetic mini dataset if no FORCE CSV is available, then creat
 
 ## Dashboard
 
-The Streamlit shell exists, but dashboard polish is intentionally paused until the MVP baseline is locked.
+```powershell
+streamlit run app/streamlit_app.py
+```
+
+The dashboard opens the MVP held-out well artifact by default and shows log tracks, predicted lithology, confidence, uncertainty, QC review zones, explanations, and fold metrics.
 
 ## Tests
 
@@ -101,7 +108,7 @@ reports/        Generated models, metrics, predictions
 ## Current Limitations
 
 - CSV ingestion is implemented first; LAS parsing is not wired yet.
-- FORCE penalty scoring is not active yet, though the official `12 x 12` matrix has been located.
+- FORCE penalty scoring depends on the official `12 x 12` matrix in `references/force-2020-official/lithology_competition/data/penalty_matrix.npy`.
 - SHAP explanations are optional and only used if the package is installed.
 - The baseline model is intentionally simple so the team can trust the data split and artifact flow before adding complexity.
 

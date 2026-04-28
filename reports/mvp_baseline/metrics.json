@@ -1,5 +1,6 @@
 {
-  "weighted_f1":0.6851294313,
+  "mean_weighted_f1":0.6512828592,
+  "mean_force_penalty":0.8480730223,
   "heldout_well":"15\/9-13",
   "target_col":"FORCE_2020_LITHOFACIES_LITHOLOGY",
   "well_col":"WELL",

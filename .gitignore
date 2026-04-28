@@ -15,7 +15,9 @@ reports/*
 !reports/.gitkeep
 !reports/mvp_baseline/
 reports/mvp_baseline/*
+!reports/mvp_baseline/all_oof_predictions.csv
 !reports/mvp_baseline/confusion_matrix.csv
+!reports/mvp_baseline/fold_metrics.csv
 !reports/mvp_baseline/heldout_well_15_9-13_predictions.csv
 !reports/mvp_baseline/metrics.json
 !reports/mvp_baseline/random_forest_mvp.joblib
