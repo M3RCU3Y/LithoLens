@@ -32,8 +32,18 @@ def test_mvp_baseline_infers_columns_and_saves_one_heldout_well(tmp_path: Path):
     assert result.curve_cols == ["GR", "RHOB", "NPHI"]
     assert 0 <= result.weighted_f1 <= 1
     assert result.predictions_path.exists()
+    assert result.fold_metrics_path.exists()
+    assert result.overall_predictions_path.exists()
+    assert result.summary_path.exists()
     predictions = pd.read_csv(result.predictions_path)
+    fold_metrics = pd.read_csv(result.fold_metrics_path)
+    summary = pd.read_json(result.summary_path, typ="series")
     assert predictions["WELL"].nunique() == 1
+    assert len(fold_metrics) == 3
+    assert "weighted_f1" in fold_metrics.columns
+    assert "force_penalty" in fold_metrics.columns
+    assert "mean_weighted_f1" in summary.index
+    assert "mean_force_penalty" in summary.index
     assert {"prediction", "actual", "GR_was_missing", "NPHI_was_missing"}.issubset(
         predictions.columns
     )
