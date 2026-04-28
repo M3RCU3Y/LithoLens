@@ -44,6 +44,18 @@ def test_mvp_baseline_infers_columns_and_saves_one_heldout_well(tmp_path: Path):
     assert "force_penalty" in fold_metrics.columns
     assert "mean_weighted_f1" in summary.index
     assert "mean_force_penalty" in summary.index
-    assert {"prediction", "actual", "GR_was_missing", "NPHI_was_missing"}.issubset(
-        predictions.columns
-    )
+    assert {
+        "prediction",
+        "actual",
+        "GR_was_missing",
+        "NPHI_was_missing",
+        "confidence",
+        "margin",
+        "entropy",
+        "uncertainty_flag",
+        "qc_warning",
+        "review_zone",
+        "explanation",
+    }.issubset(predictions.columns)
+    assert predictions["confidence"].between(0, 1).all()
+    assert predictions["explanation"].str.contains("Predicted").all()

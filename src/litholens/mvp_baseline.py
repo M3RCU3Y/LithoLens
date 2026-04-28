@@ -10,6 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix, f1_score
 from sklearn.model_selection import GroupKFold
 
+from litholens.constants import FORCE_LITHOLOGY_LABELS
 from litholens.impute import add_missing_indicators
 from litholens.io import load_force_csv
 from litholens.schema import available_curve_cols, infer_depth_col, infer_group_col, infer_target_col
@@ -61,6 +62,73 @@ def force_penalty_score(y_true: pd.Series, y_pred: pd.Series, penalty_matrix: np
     return float(np.mean(penalties)) if penalties else float("nan")
 
 
+def _uncertainty_frame(
+    model: RandomForestClassifier,
+    X_fold: pd.DataFrame,
+    confidence_threshold: float,
+    margin_threshold: float,
+    entropy_threshold: float,
+) -> pd.DataFrame:
+    probabilities = model.predict_proba(X_fold)
+    order = np.argsort(probabilities, axis=1)
+    top = order[:, -1]
+    second = order[:, -2] if probabilities.shape[1] > 1 else order[:, -1]
+    confidence = probabilities[np.arange(len(probabilities)), top]
+    second_probability = probabilities[np.arange(len(probabilities)), second]
+    margin = confidence - second_probability
+    clipped = np.clip(probabilities, 1e-12, 1.0)
+    entropy = -np.sum(clipped * np.log(clipped), axis=1)
+    uncertainty_flag = (
+        (confidence < confidence_threshold)
+        | (margin < margin_threshold)
+        | (entropy > entropy_threshold)
+    )
+    return pd.DataFrame(
+        {
+            "confidence": confidence,
+            "margin": margin,
+            "entropy": entropy,
+            "uncertainty_flag": uncertainty_flag,
+        },
+        index=X_fold.index,
+    )
+
+
+def _qc_warning(df: pd.DataFrame, curve_cols: list[str]) -> pd.Series:
+    missing_cols = [f"{col}_was_missing" for col in curve_cols if f"{col}_was_missing" in df.columns]
+    if not missing_cols:
+        return pd.Series("", index=df.index)
+
+    def summarize(row: pd.Series) -> str:
+        missing = [col.replace("_was_missing", "") for col in missing_cols if bool(row[col])]
+        return f"Missing/imputed curves: {', '.join(missing)}" if missing else ""
+
+    return df[missing_cols].apply(summarize, axis=1)
+
+
+def _top_feature_names(model: RandomForestClassifier, feature_names: list[str], n: int = 3) -> list[str]:
+    importances = getattr(model, "feature_importances_", None)
+    if importances is None:
+        return feature_names[:n]
+    ordered = sorted(zip(feature_names, importances, strict=False), key=lambda item: item[1], reverse=True)
+    return [name for name, _ in ordered[:n]]
+
+
+def _explanations(df: pd.DataFrame, top_features: list[str]) -> pd.Series:
+    drivers = ", ".join(name.replace("_", " ").lower() for name in top_features) or "the available logs"
+
+    def explain(row: pd.Series) -> str:
+        label = FORCE_LITHOLOGY_LABELS.get(row["prediction"], str(row["prediction"]))
+        text = f"Predicted {label} with {row['confidence']:.2f} confidence. Main drivers were {drivers}."
+        if row.get("qc_warning"):
+            text += f" {row['qc_warning']}, so review is recommended."
+        elif bool(row.get("uncertainty_flag", False)):
+            text += " Uncertainty is elevated, so review is recommended."
+        return text
+
+    return df.apply(explain, axis=1)
+
+
 def _load_penalty_matrix(path: str | Path | None) -> np.ndarray | None:
     if not path:
         return None
@@ -75,6 +143,9 @@ def run_mvp_baseline(
     random_state: int = 42,
     n_estimators: int = 100,
     penalty_matrix_path: str | Path | None = "references/force-2020-official/lithology_competition/data/penalty_matrix.npy",
+    confidence_threshold: float = 0.60,
+    margin_threshold: float = 0.15,
+    entropy_threshold: float = 1.25,
 ) -> MvpBaselineResult:
     """Run the smallest useful FORCE-style lithology baseline.
 
@@ -115,6 +186,13 @@ def run_mvp_baseline(
         )
         model.fit(X.iloc[train_idx], y.iloc[train_idx])
         predictions = model.predict(X.iloc[test_idx])
+        uncertainty = _uncertainty_frame(
+            model,
+            X.iloc[test_idx],
+            confidence_threshold=confidence_threshold,
+            margin_threshold=margin_threshold,
+            entropy_threshold=entropy_threshold,
+        )
         fold_true = y.iloc[test_idx]
         fold_penalty = (
             force_penalty_score(fold_true, pd.Series(predictions), penalty_matrix)
@@ -134,6 +212,10 @@ def run_mvp_baseline(
         validation["fold"] = fold
         validation["actual"] = fold_true.to_numpy()
         validation["prediction"] = predictions
+        validation[["confidence", "margin", "entropy", "uncertainty_flag"]] = uncertainty.to_numpy()
+        validation["qc_warning"] = _qc_warning(validation, curve_cols)
+        validation["review_zone"] = validation["uncertainty_flag"].astype(bool) | validation["qc_warning"].ne("")
+        validation["explanation"] = _explanations(validation, _top_feature_names(model, X.columns.tolist()))
         validation_pieces.append(validation)
         last_model = model
 
