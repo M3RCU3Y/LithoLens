@@ -54,8 +54,14 @@ def test_mvp_baseline_infers_columns_and_saves_one_heldout_well(tmp_path: Path):
         "entropy",
         "uncertainty_flag",
         "qc_warning",
+        "qc_missing_curve_count",
+        "qc_missing_curves",
+        "qc_range_warning",
+        "qc_spike_warning",
+        "qc_issue",
         "review_zone",
         "explanation",
     }.issubset(predictions.columns)
     assert predictions["confidence"].between(0, 1).all()
     assert predictions["explanation"].str.contains("Predicted").all()
+    assert predictions["qc_issue"].dtype == bool

@@ -17,6 +17,7 @@ def main() -> None:
     parser.add_argument("--input", help="Optional FORCE-style CSV path. Overrides config data.raw_path.")
     parser.add_argument("--output-dir", default="reports/mvp_baseline", help="Output directory.")
     parser.add_argument("--trees", type=int, default=100, help="RandomForest tree count.")
+    parser.add_argument("--compare-models", action="store_true", help="Export first-fold model comparison.")
     args = parser.parse_args()
     config = load_config(Path(args.config))
     input_path = Path(args.input or config["data"]["raw_path"])
@@ -24,6 +25,7 @@ def main() -> None:
         input_path=input_path,
         output_dir=Path(args.output_dir),
         n_estimators=args.trees,
+        compare_models=args.compare_models,
     )
     print("MVP baseline complete")
     print(f"Held-out well: {result.heldout_well}")

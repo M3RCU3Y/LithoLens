@@ -96,6 +96,8 @@ streamlit run app/streamlit_app.py
 | --- | --- |
 | `reports/mvp_baseline/metrics.json` | aggregate MVP metrics |
 | `reports/mvp_baseline/fold_metrics.csv` | per-fold weighted F1 and FORCE penalty |
+| `reports/mvp_baseline/calibration_metrics.csv` | confidence calibration bins |
+| `reports/mvp_baseline/model_comparison.csv` | first-fold baseline model comparison |
 | `reports/mvp_baseline/confusion_matrix.csv` | aggregate confusion matrix |
 | `reports/mvp_baseline/all_oof_predictions.csv` | all out-of-fold predictions, tracked with Git LFS |
 | `reports/mvp_baseline/heldout_well_15_9-13_predictions.csv` | Streamlit demo well |
@@ -159,6 +161,7 @@ LithoLens is intentionally simple at the model layer and careful at the workflow
 ## Reference Docs
 
 - [Engineering roadmap](docs/ENGINEERING_ROADMAP.md)
+- [Judge walkthrough](docs/JUDGE_WALKTHROUGH.md)
 - [Demo notes](docs/DEMO_NOTES.md)
 - [Model card](docs/MODEL_CARD.md)
 - [Data dictionary](docs/DATA_DICTIONARY.md)
