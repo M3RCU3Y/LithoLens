@@ -16,6 +16,8 @@ The MVP exports:
 
 - per-fold weighted F1
 - per-fold FORCE penalty score when `penalty_matrix.npy` is available
+- expected calibration error and confidence/accuracy bins
+- first-fold model comparison between RandomForest and HistGradientBoosting when enabled
 - aggregate confusion matrix
 - out-of-fold predictions
 - one held-out well prediction file for the demo
@@ -24,7 +26,7 @@ The MVP exports:
 
 - Performance depends on curve coverage and label quality.
 - Rare lithology classes may be underrepresented.
-- Confidence may be miscalibrated until calibration is added.
+- Confidence is reported with calibration diagnostics, but probability calibration is not yet fitted back into the model.
 - Imputation flags must be reviewed because filled values are not measurements.
 - Current explanations use RandomForest feature importances, not SHAP.
 

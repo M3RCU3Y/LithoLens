@@ -22,6 +22,8 @@ MVP_REPORT_DIR = Path("reports/mvp_baseline")
 DEFAULT_PREDICTIONS = MVP_REPORT_DIR / "heldout_well_15_9-13_predictions.csv"
 FOLD_METRICS = MVP_REPORT_DIR / "fold_metrics.csv"
 SUMMARY_METRICS = MVP_REPORT_DIR / "metrics.json"
+CALIBRATION_METRICS = MVP_REPORT_DIR / "calibration_metrics.csv"
+MODEL_COMPARISON = MVP_REPORT_DIR / "model_comparison.csv"
 
 st.set_page_config(page_title="LithoLens", layout="wide")
 st.title("LithoLens")
@@ -62,7 +64,7 @@ top[1].metric("Rows", f"{len(view):,}")
 top[2].metric("Mean confidence", f"{mean_confidence:.2f}")
 top[3].metric("Review zones", f"{review_fraction:.1%}")
 
-tabs = st.tabs(["Tracks", "Review Zones", "Explanations", "Fold Metrics"])
+tabs = st.tabs(["Tracks", "Review Zones", "Explanations", "Metrics", "Calibration", "Model Comparison"])
 
 with tabs[0]:
     left, middle, right = st.columns([2, 1, 1])
@@ -83,7 +85,21 @@ with tabs[0]:
 with tabs[1]:
     columns = [
         col
-        for col in [depth_col, "prediction", "actual", "confidence", "margin", "entropy", "uncertainty_flag", "qc_warning", "review_zone"]
+        for col in [
+            depth_col,
+            "prediction",
+            "actual",
+            "confidence",
+            "margin",
+            "entropy",
+            "uncertainty_flag",
+            "qc_missing_curve_count",
+            "qc_missing_curves",
+            "qc_range_warning",
+            "qc_spike_warning",
+            "qc_warning",
+            "review_zone",
+        ]
         if col in view.columns
     ]
     review = view[view["review_zone"].astype(bool)] if "review_zone" in view.columns else view.head(0)
@@ -111,8 +127,25 @@ with tabs[2]:
 
 with tabs[3]:
     if FOLD_METRICS.exists():
+        st.subheader("GroupKFold Metrics")
         st.dataframe(pd.read_csv(FOLD_METRICS), use_container_width=True)
     else:
         st.info("No fold_metrics.csv found yet.")
     if SUMMARY_METRICS.exists():
+        st.subheader("Summary")
         st.json(pd.read_json(SUMMARY_METRICS, typ="series").to_dict())
+
+with tabs[4]:
+    if CALIBRATION_METRICS.exists():
+        calibration = pd.read_csv(CALIBRATION_METRICS)
+        st.dataframe(calibration, use_container_width=True)
+        if {"mean_confidence", "accuracy"}.issubset(calibration.columns):
+            st.line_chart(calibration.set_index("bin")[["mean_confidence", "accuracy"]])
+    else:
+        st.info("No calibration_metrics.csv found yet.")
+
+with tabs[5]:
+    if MODEL_COMPARISON.exists():
+        st.dataframe(pd.read_csv(MODEL_COMPARISON), use_container_width=True)
+    else:
+        st.info("Run the baseline with `--compare-models` to create model_comparison.csv.")
