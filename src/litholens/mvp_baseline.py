@@ -6,11 +6,11 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import confusion_matrix, f1_score
 from sklearn.model_selection import GroupKFold
 
-from litholens.constants import FORCE_LITHOLOGY_LABELS
+from litholens.constants import DEFAULT_PHYSICAL_RANGES, FORCE_LITHOLOGY_LABELS
 from litholens.impute import add_missing_indicators
 from litholens.io import load_force_csv
 from litholens.schema import available_curve_cols, infer_depth_col, infer_group_col, infer_target_col
@@ -34,6 +34,8 @@ class MvpBaselineResult:
     summary_path: Path
     model_path: Path
     heldout_well: str
+    calibration_metrics_path: Path
+    model_comparison_path: Path | None = None
 
 
 def _require_column(name: str, value: str | None) -> str:
@@ -60,6 +62,33 @@ def force_penalty_score(y_true: pd.Series, y_pred: pd.Series, penalty_matrix: np
             continue
         penalties.append(float(penalty_matrix[label_to_index[truth], label_to_index[pred]]))
     return float(np.mean(penalties)) if penalties else float("nan")
+
+
+def expected_calibration_error(
+    confidence: np.ndarray | pd.Series,
+    correct: np.ndarray | pd.Series,
+    n_bins: int = 10,
+) -> float:
+    """Compute expected calibration error from confidence and correctness arrays."""
+    confidence_arr = np.asarray(confidence, dtype=float)
+    correct_arr = np.asarray(correct, dtype=float)
+    if len(confidence_arr) == 0:
+        return float("nan")
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    ece = 0.0
+    for idx in range(n_bins):
+        low = edges[idx]
+        high = edges[idx + 1]
+        if idx == n_bins - 1:
+            mask = (confidence_arr >= low) & (confidence_arr <= high)
+        else:
+            mask = (confidence_arr >= low) & (confidence_arr < high)
+        if not np.any(mask):
+            continue
+        bin_confidence = float(confidence_arr[mask].mean())
+        bin_accuracy = float(correct_arr[mask].mean())
+        ece += float(mask.mean()) * abs(bin_accuracy - bin_confidence)
+    return float(ece)
 
 
 def _uncertainty_frame(
@@ -106,6 +135,70 @@ def _qc_warning(df: pd.DataFrame, curve_cols: list[str]) -> pd.Series:
     return df[missing_cols].apply(summarize, axis=1)
 
 
+def _add_qc_columns(df: pd.DataFrame, curve_cols: list[str]) -> pd.DataFrame:
+    out = df.copy()
+    missing_cols = [f"{col}_was_missing" for col in curve_cols if f"{col}_was_missing" in out.columns]
+    if missing_cols:
+        out["qc_missing_curve_count"] = out[missing_cols].sum(axis=1).astype(int)
+        out["qc_missing_curves"] = out[missing_cols].apply(
+            lambda row: ", ".join(col.replace("_was_missing", "") for col in missing_cols if bool(row[col])),
+            axis=1,
+        )
+    else:
+        out["qc_missing_curve_count"] = 0
+        out["qc_missing_curves"] = ""
+
+    range_warning = pd.Series("", index=out.index, dtype=object)
+    for col in curve_cols:
+        if col not in out.columns or col not in DEFAULT_PHYSICAL_RANGES:
+            continue
+        low, high = DEFAULT_PHYSICAL_RANGES[col]
+        values = pd.to_numeric(out[col], errors="coerce")
+        flagged = values.notna() & ((values < low) | (values > high))
+        range_warning.loc[flagged] = range_warning.loc[flagged].apply(
+            lambda existing, curve=col: _append_warning(existing, curve)
+        )
+    out["qc_range_warning"] = range_warning
+
+    spike_warning = pd.Series("", index=out.index, dtype=object)
+    for col in curve_cols:
+        if col not in out.columns:
+            continue
+        values = pd.to_numeric(out[col], errors="coerce")
+        median = values.median()
+        mad = (values - median).abs().median()
+        if pd.isna(mad) or mad == 0:
+            continue
+        robust_z = 0.6745 * (values - median).abs() / mad
+        flagged = robust_z > 6.0
+        spike_warning.loc[flagged] = spike_warning.loc[flagged].apply(
+            lambda existing, curve=col: _append_warning(existing, curve)
+        )
+    out["qc_spike_warning"] = spike_warning
+    out["qc_warning"] = out.apply(_combined_qc_warning, axis=1)
+    out["qc_issue"] = (
+        out["qc_missing_curve_count"].gt(0)
+        | out["qc_range_warning"].ne("")
+        | out["qc_spike_warning"].ne("")
+    )
+    return out
+
+
+def _append_warning(existing: str, curve: str) -> str:
+    return curve if not existing else f"{existing}, {curve}"
+
+
+def _combined_qc_warning(row: pd.Series) -> str:
+    parts = []
+    if row.get("qc_missing_curves"):
+        parts.append(f"Missing/imputed curves: {row['qc_missing_curves']}")
+    if row.get("qc_range_warning"):
+        parts.append(f"Out-of-range curves: {row['qc_range_warning']}")
+    if row.get("qc_spike_warning"):
+        parts.append(f"Spike-like curves: {row['qc_spike_warning']}")
+    return "; ".join(parts)
+
+
 def _top_feature_names(model: RandomForestClassifier, feature_names: list[str], n: int = 3) -> list[str]:
     importances = getattr(model, "feature_importances_", None)
     if importances is None:
@@ -136,6 +229,79 @@ def _load_penalty_matrix(path: str | Path | None) -> np.ndarray | None:
     return np.load(matrix_path) if matrix_path.exists() else None
 
 
+def _calibration_table(predictions: pd.DataFrame, n_bins: int = 10) -> pd.DataFrame:
+    if predictions.empty:
+        return pd.DataFrame(columns=["bin", "count", "mean_confidence", "accuracy", "abs_gap"])
+    confidence = predictions["confidence"].astype(float).to_numpy()
+    correct = (predictions["actual"] == predictions["prediction"]).astype(float).to_numpy()
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    rows = []
+    for idx in range(n_bins):
+        low = edges[idx]
+        high = edges[idx + 1]
+        mask = (confidence >= low) & (confidence <= high if idx == n_bins - 1 else confidence < high)
+        count = int(mask.sum())
+        if count == 0:
+            rows.append({"bin": idx + 1, "count": 0, "mean_confidence": np.nan, "accuracy": np.nan, "abs_gap": np.nan})
+            continue
+        mean_confidence = float(confidence[mask].mean())
+        accuracy = float(correct[mask].mean())
+        rows.append(
+            {
+                "bin": idx + 1,
+                "count": count,
+                "mean_confidence": mean_confidence,
+                "accuracy": accuracy,
+                "abs_gap": abs(accuracy - mean_confidence),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _compare_models(
+    X: pd.DataFrame,
+    y: pd.Series,
+    groups: pd.Series,
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
+    penalty_matrix: np.ndarray | None,
+    random_state: int,
+    n_estimators: int,
+) -> pd.DataFrame:
+    candidates = [
+        (
+            "RandomForest",
+            RandomForestClassifier(
+                n_estimators=n_estimators,
+                class_weight="balanced_subsample",
+                random_state=random_state,
+                n_jobs=-1,
+            ),
+        ),
+        ("HistGradientBoosting", HistGradientBoostingClassifier(random_state=random_state)),
+    ]
+    rows = []
+    for name, model in candidates:
+        model.fit(X.iloc[train_idx], y.iloc[train_idx])
+        predictions = model.predict(X.iloc[test_idx])
+        penalty = (
+            force_penalty_score(y.iloc[test_idx], pd.Series(predictions), penalty_matrix)
+            if penalty_matrix is not None
+            else float("nan")
+        )
+        rows.append(
+            {
+                "model": name,
+                "fold": 1,
+                "validation_rows": len(test_idx),
+                "validation_wells": int(groups.iloc[test_idx].nunique()),
+                "weighted_f1": float(f1_score(y.iloc[test_idx], predictions, average="weighted", zero_division=0)),
+                "force_penalty": penalty,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def run_mvp_baseline(
     input_path: str | Path,
     output_dir: str | Path = "reports/mvp_baseline",
@@ -146,6 +312,7 @@ def run_mvp_baseline(
     confidence_threshold: float = 0.60,
     margin_threshold: float = 0.15,
     entropy_threshold: float = 1.25,
+    compare_models: bool = False,
 ) -> MvpBaselineResult:
     """Run the smallest useful FORCE-style lithology baseline.
 
@@ -176,8 +343,11 @@ def run_mvp_baseline(
     fold_rows = []
     validation_pieces = []
     last_model = None
+    comparison = None
     splits = GroupKFold(n_splits=min(n_splits, groups.nunique()))
     for fold, (train_idx, test_idx) in enumerate(splits.split(X, y, groups), start=1):
+        if compare_models and fold == 1:
+            comparison = _compare_models(X, y, groups, train_idx, test_idx, penalty_matrix, random_state, n_estimators)
         model = RandomForestClassifier(
             n_estimators=n_estimators,
             class_weight="balanced_subsample",
@@ -213,8 +383,8 @@ def run_mvp_baseline(
         validation["actual"] = fold_true.to_numpy()
         validation["prediction"] = predictions
         validation[["confidence", "margin", "entropy", "uncertainty_flag"]] = uncertainty.to_numpy()
-        validation["qc_warning"] = _qc_warning(validation, curve_cols)
-        validation["review_zone"] = validation["uncertainty_flag"].astype(bool) | validation["qc_warning"].ne("")
+        validation = _add_qc_columns(validation, curve_cols)
+        validation["review_zone"] = validation["uncertainty_flag"].astype(bool) | validation["qc_issue"].astype(bool)
         validation["explanation"] = _explanations(validation, _top_feature_names(model, X.columns.tolist()))
         validation_pieces.append(validation)
         last_model = model
@@ -238,6 +408,18 @@ def run_mvp_baseline(
 
     overall_predictions_path = output / "all_oof_predictions.csv"
     all_predictions.to_csv(overall_predictions_path, index=False)
+    calibration = _calibration_table(all_predictions)
+    calibration_metrics_path = output / "calibration_metrics.csv"
+    calibration.to_csv(calibration_metrics_path, index=False)
+    correct = all_predictions["actual"].eq(all_predictions["prediction"])
+    mean_ece = expected_calibration_error(all_predictions["confidence"], correct)
+    mean_confidence = float(all_predictions["confidence"].mean())
+    oof_accuracy = float(correct.mean())
+
+    model_comparison_path = None
+    if comparison is not None:
+        model_comparison_path = output / "model_comparison.csv"
+        comparison.to_csv(model_comparison_path, index=False)
 
     weighted = float(fold_metrics["weighted_f1"].mean())
     mean_force_penalty = float(fold_metrics["force_penalty"].mean())
@@ -252,6 +434,9 @@ def run_mvp_baseline(
         {
             "mean_weighted_f1": weighted,
             "mean_force_penalty": mean_force_penalty,
+            "mean_ece": mean_ece,
+            "mean_confidence": mean_confidence,
+            "oof_accuracy": oof_accuracy,
             "heldout_well": heldout_well,
             "target_col": target_col,
             "well_col": well_col,
@@ -273,6 +458,8 @@ def run_mvp_baseline(
         summary_path=summary_path,
         model_path=model_path,
         heldout_well=heldout_well,
+        calibration_metrics_path=calibration_metrics_path,
+        model_comparison_path=model_comparison_path,
     )
 
 
